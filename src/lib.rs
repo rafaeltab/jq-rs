@@ -165,6 +165,16 @@ pub fn run(program: &str, data: &str) -> Result<String> {
     compile(program)?.run(data)
 }
 
+/// Run a jq program on a blob of json data and return raw output.
+///
+/// In the case of failure to run the program, feedback from the jq api will be
+/// available in the supplied `String` value.
+/// Failures can occur for a variety of reasons, but mostly you'll see them as
+/// a result of bad jq program syntax, or invalid json data.
+pub fn run_raw(program: &str, data: &str) -> Result<String> {
+    compile(program)?.run_raw(data)
+}
+
 /// A pre-compiled jq program which can be run against different inputs.
 pub struct JqProgram {
     jq: jq::Jq,
@@ -173,6 +183,15 @@ pub struct JqProgram {
 impl JqProgram {
     /// Runs a json string input against a pre-compiled jq program.
     pub fn run(&mut self, data: &str) -> Result<String> {
+        self.execute(data, false)
+    }
+
+    /// Runs a json string input against a pre-compiled jq program and returns raw output
+    pub fn run_raw(&mut self, data: &str) -> Result<String> {
+        self.execute(data, true)
+    }
+
+    fn execute(&mut self, data: &str, use_raw_output: bool) -> Result<String> {
         if data.trim().is_empty() {
             // During work on #4, #7, the parser test which allows us to avoid a memory
             // error shows that an empty input just yields an empty response BUT our
@@ -180,7 +199,10 @@ impl JqProgram {
             return Ok("".into());
         }
         let input = CString::new(data)?;
-        self.jq.execute(input)
+        match use_raw_output {
+            true => self.jq.execute_raw(input),
+            false => self.jq.execute(input),
+        }
     }
 }
 
@@ -195,7 +217,7 @@ pub fn compile(program: &str) -> Result<JqProgram> {
 #[cfg(test)]
 mod test {
 
-    use super::{compile, run, Error};
+    use super::{compile, run, run_raw, Error};
     use matches::assert_matches;
     use serde_json;
 
@@ -302,6 +324,50 @@ mod test {
 
         let res = run(".", data);
         assert_matches!(res, Err(Error::System { .. }));
+    }
+
+    #[test]
+    fn run_raw_string_nested_test() {
+        let res = run_raw(
+            r#"{name, test: "\(.)"}"#,
+            r#"{"name":"john"}"#,
+        );
+        let expected = r#"{"name":"john","test":"{\"name\":\"john\"}"}
+"#;
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn run_raw_string_test() {
+        let res = run_raw(
+            r#""\(.)""#,
+            r#"{"name":"john"}"#,
+        );
+        let expected = r#"{"name":"john"}
+"#;
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn run_raw_object_test() {
+        let res = run_raw(
+            r#"."#,
+            r#"{"name":"john"}"#,
+        );
+        let expected = r#"{"name":"john"}
+"#;
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn run_test() {
+        let res = run(
+            r#""\(.)""#,
+            r#"{"name":"john"}"#,
+        );
+        let expected = r#""{\"name\":\"john\"}"
+"#;
+        assert_eq!(res.unwrap(), expected);
     }
 
     pub mod mem_errors {

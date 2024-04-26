@@ -87,14 +87,20 @@ impl Jq {
     /// Run the jq program against an input.
     pub fn execute(&mut self, input: CString) -> Result<String> {
         let mut parser = Parser::new();
-        self.process(parser.parse(input)?)
+        self.process(parser.parse(input)?, false)
+    }
+
+    /// Run the jq program against an input, while returning raw output.
+    pub fn execute_raw(&mut self, input: CString) -> Result<String> {
+        let mut parser = Parser::new();
+        self.process(parser.parse(input)?, true)
     }
 
     /// Unwind the parser and return the rendered result.
     ///
     /// When this results in `Err`, the String value should contain a message about
     /// what failed.
-    fn process(&mut self, initial_value: JV) -> Result<String> {
+    fn process(&mut self, initial_value: JV, use_raw_output: bool) -> Result<String> {
         let mut buf = String::new();
 
         unsafe {
@@ -106,7 +112,7 @@ impl Jq {
             // it is no longer needed.
             drop(initial_value);
 
-            dump(self, &mut buf)?;
+            dump(self, &mut buf, use_raw_output)?;
         }
 
         Ok(buf)
@@ -129,7 +135,15 @@ impl JV {
         let dump = JV {
             ptr: unsafe { jv_dump_string(jv_copy(self.ptr), 0) },
         };
-        unsafe { get_string_value(jv_string_value(dump.ptr)) }
+        dump.as_string()
+    }
+
+    /// Convert the current `JV` into the raw rendering of itself.
+    pub fn as_raw_string(&self) -> Result<String> {
+        let copied = JV {
+            ptr: unsafe { jv_copy(self.ptr) },
+        };
+        copied.as_string()
     }
 
     /// Attempts to extract feedback from jq if the JV is invalid.
@@ -168,13 +182,15 @@ impl JV {
     }
 
     pub fn as_string(&self) -> Result<String> {
-        unsafe {
-            if jv_get_kind(self.ptr) == jv_kind_JV_KIND_STRING {
-                get_string_value(jv_string_value(self.ptr))
-            } else {
-                Err(Error::Unknown)
-            }
+        if self.is_string() {
+            unsafe { get_string_value(jv_string_value(self.ptr)) }
+        } else {
+            Err(Error::Unknown)
         }
+    }
+
+    pub fn is_string(&self) -> bool {
+        unsafe { jv_get_kind(self.ptr) == jv_kind_JV_KIND_STRING }
     }
 
     pub fn is_valid(&self) -> bool {
@@ -256,7 +272,7 @@ unsafe fn get_string_value(value: *const c_char) -> Result<String> {
 }
 
 /// Renders the data from the parser and pushes it into the buffer.
-unsafe fn dump(jq: &Jq, buf: &mut String) -> Result<()> {
+unsafe fn dump(jq: &Jq, buf: &mut String, use_raw_output: bool) -> Result<()> {
     // Looks a lot like an iterator...
 
     let mut value = JV {
@@ -264,7 +280,11 @@ unsafe fn dump(jq: &Jq, buf: &mut String) -> Result<()> {
     };
 
     while value.is_valid() {
-        let s = value.as_dump_string()?;
+        let s: String = if use_raw_output && value.is_string() {
+            value.as_raw_string()?
+        } else {
+            value.as_dump_string()?
+        };
         buf.push_str(&s);
         buf.push('\n');
 
