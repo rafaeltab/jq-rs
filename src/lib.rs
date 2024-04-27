@@ -150,10 +150,12 @@ extern crate serde_json;
 
 mod errors;
 mod jq;
+mod options;
 
 use std::ffi::CString;
 
 pub use errors::{Error, Result};
+use options::JqOptions;
 
 /// Run a jq program on a blob of json data.
 ///
@@ -171,8 +173,8 @@ pub fn run(program: &str, data: &str) -> Result<String> {
 /// available in the supplied `String` value.
 /// Failures can occur for a variety of reasons, but mostly you'll see them as
 /// a result of bad jq program syntax, or invalid json data.
-pub fn run_raw(program: &str, data: &str) -> Result<String> {
-    compile(program)?.run_raw(data)
+pub fn run_advanced(program: &str, data: &str, options: JqOptions) -> Result<String> {
+    compile(program)?.run_advanced(data, options)
 }
 
 /// A pre-compiled jq program which can be run against different inputs.
@@ -183,15 +185,15 @@ pub struct JqProgram {
 impl JqProgram {
     /// Runs a json string input against a pre-compiled jq program.
     pub fn run(&mut self, data: &str) -> Result<String> {
-        self.execute(data, false)
+        self.execute(data, JqOptions::default())
     }
 
-    /// Runs a json string input against a pre-compiled jq program and returns raw output
-    pub fn run_raw(&mut self, data: &str) -> Result<String> {
-        self.execute(data, true)
+    /// Runs a json string input against a pre-compiled jq program with additional jq options
+    pub fn run_advanced(&mut self, data: &str, options: JqOptions) -> Result<String> {
+        self.execute(data, options)
     }
 
-    fn execute(&mut self, data: &str, use_raw_output: bool) -> Result<String> {
+    fn execute(&mut self, data: &str, options: JqOptions) -> Result<String> {
         if data.trim().is_empty() {
             // During work on #4, #7, the parser test which allows us to avoid a memory
             // error shows that an empty input just yields an empty response BUT our
@@ -199,10 +201,7 @@ impl JqProgram {
             return Ok("".into());
         }
         let input = CString::new(data)?;
-        match use_raw_output {
-            true => self.jq.execute_raw(input),
-            false => self.jq.execute(input),
-        }
+        self.jq.execute_advanced(input, options)
     }
 }
 
@@ -217,7 +216,12 @@ pub fn compile(program: &str) -> Result<JqProgram> {
 #[cfg(test)]
 mod test {
 
-    use super::{compile, run, run_raw, Error};
+    use crate::{
+        options::{JqColorization, JqIndentation},
+        JqOptions,
+    };
+
+    use super::{compile, run, run_advanced, Error};
     use matches::assert_matches;
     use serde_json;
 
@@ -327,10 +331,11 @@ mod test {
     }
 
     #[test]
-    fn run_raw_string_nested_test() {
-        let res = run_raw(
+    fn run_raw_string_nested() {
+        let res = run_advanced(
             r#"{name, test: "\(.)"}"#,
             r#"{"name":"john"}"#,
+            JqOptions::default().with_raw_output(true),
         );
         let expected = r#"{"name":"john","test":"{\"name\":\"john\"}"}
 "#;
@@ -338,10 +343,11 @@ mod test {
     }
 
     #[test]
-    fn run_raw_string_test() {
-        let res = run_raw(
+    fn run_raw_string() {
+        let res = run_advanced(
             r#""\(.)""#,
             r#"{"name":"john"}"#,
+            JqOptions::default().with_raw_output(true),
         );
         let expected = r#"{"name":"john"}
 "#;
@@ -350,9 +356,10 @@ mod test {
 
     #[test]
     fn run_raw_object_test() {
-        let res = run_raw(
+        let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
+            JqOptions::default().with_raw_output(true),
         );
         let expected = r#"{"name":"john"}
 "#;
@@ -360,11 +367,77 @@ mod test {
     }
 
     #[test]
-    fn run_test() {
-        let res = run(
-            r#""\(.)""#,
+    fn run_color_test() {
+        let res = run_advanced(
+            r#"."#,
             r#"{"name":"john"}"#,
+            JqOptions::default().with_colorization(JqColorization::Colorize),
         );
+        let expected = "\u{1b}[1;39m{\u{1b}[0m\u{1b}[34;1m\"name\"\u{1b}[0m\u{1b}[1;39m:\u{1b}[0m\u{1b}[0;32m\"john\"\u{1b}[0m\u{1b}[1;39m\u{1b}[1;39m}\u{1b}[0m\n";
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn run_custom_color_test() {
+        let res = run_advanced(
+            r#"."#,
+            r#"{"name":"john"}"#,
+            JqOptions::default().with_colorization(JqColorization::Custom("0;34:0;34:0;34:0;34:0;34:0;34:0;34:0;34")),
+        );
+        let expected = "\u{1b}[0;34m{\u{1b}[0m\u{1b}[34;1m\"name\"\u{1b}[0m\u{1b}[0;34m:\u{1b}[0m\u{1b}[0;34m\"john\"\u{1b}[0m\u{1b}[0;34m\u{1b}[0;34m}\u{1b}[0m\n";
+        assert_eq!(res.unwrap(), expected);
+    }
+    #[test]
+    fn run_monochrome_test() {
+        let res = run_advanced(
+            r#"."#,
+            r#"{"name":"john"}"#,
+            JqOptions::default().with_colorization(JqColorization::Monochrome),
+        );
+        let expected = r#"{"name":"john"}
+"#;
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn run_indent_4() {
+        let res = run_advanced(
+            r#"."#,
+            r#"{"name":"john"}"#,
+            JqOptions::default().with_indentation(JqIndentation::Spaces(4)),
+        );
+        let expected = r#"{
+    "name": "john"
+}
+"#;
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn run_indent_minus1() {
+        let res = run_advanced(
+            r#"."#,
+            r#"{"name":"john"}"#,
+            JqOptions::default().with_indentation(JqIndentation::Spaces(-1)),
+        );
+        let expected = "{\n\t\"name\": \"john\"\n}\n";
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn run_indent_tab() {
+        let res = run_advanced(
+            r#"."#,
+            r#"{"name":"john"}"#,
+            JqOptions::default().with_indentation(JqIndentation::Tabs),
+        );
+        let expected = "{\n\t\"name\": \"john\"\n}\n";
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn run_test() {
+        let res = run(r#""\(.)""#, r#"{"name":"john"}"#);
         let expected = r#""{\"name\":\"john\"}"
 "#;
         assert_eq!(res.unwrap(), expected);

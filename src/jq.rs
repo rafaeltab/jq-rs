@@ -4,12 +4,15 @@
 //! These are building blocks and not intended for use from the public API.
 
 use crate::errors::{Error, Result};
+use crate::options::{JqColorization, JqIndentation};
+use crate::JqOptions;
 use jq_sys::{
-    jq_compile, jq_format_error, jq_get_exit_code, jq_halted, jq_init, jq_next, jq_set_error_cb,
-    jq_start, jq_state, jq_teardown, jv, jv_copy, jv_dump_string, jv_free, jv_get_kind,
-    jv_invalid_get_msg, jv_invalid_has_msg, jv_kind_JV_KIND_INVALID, jv_kind_JV_KIND_NUMBER,
-    jv_kind_JV_KIND_STRING, jv_number_value, jv_parser, jv_parser_free, jv_parser_new,
-    jv_parser_next, jv_parser_set_buf, jv_string_value,
+    jq_compile, jq_format_error, jq_get_exit_code, jq_halted, jq_init, jq_next, jq_set_colors,
+    jq_set_error_cb, jq_start, jq_state, jq_teardown, jv, jv_copy, jv_dump_string, jv_free,
+    jv_get_kind, jv_invalid_get_msg, jv_invalid_has_msg, jv_kind_JV_KIND_INVALID,
+    jv_kind_JV_KIND_NUMBER, jv_kind_JV_KIND_STRING, jv_number_value, jv_parser, jv_parser_free,
+    jv_parser_new, jv_parser_next, jv_parser_set_buf, jv_print_flags_JV_PRINT_COLOR,
+    jv_print_flags_JV_PRINT_PRETTY, jv_print_flags_JV_PRINT_TAB, jv_string_value,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
@@ -84,23 +87,34 @@ impl Jq {
         }
     }
 
+    pub unsafe fn set_colors(&self, colors: &str) -> Result<()> {
+        let c_colors = CString::new(colors)?;
+        let val = jq_set_colors(c_colors.as_ptr());
+
+        if val == 1 {
+            return Ok(());
+        }
+
+        Err(Error::Unknown)
+    }
+
     /// Run the jq program against an input.
     pub fn execute(&mut self, input: CString) -> Result<String> {
         let mut parser = Parser::new();
-        self.process(parser.parse(input)?, false)
+        self.process(parser.parse(input)?, JqOptions::default())
     }
 
     /// Run the jq program against an input, while returning raw output.
-    pub fn execute_raw(&mut self, input: CString) -> Result<String> {
+    pub fn execute_advanced(&mut self, input: CString, options: JqOptions) -> Result<String> {
         let mut parser = Parser::new();
-        self.process(parser.parse(input)?, true)
+        self.process(parser.parse(input)?, options)
     }
 
     /// Unwind the parser and return the rendered result.
     ///
     /// When this results in `Err`, the String value should contain a message about
     /// what failed.
-    fn process(&mut self, initial_value: JV, use_raw_output: bool) -> Result<String> {
+    fn process(&mut self, initial_value: JV, options: JqOptions) -> Result<String> {
         let mut buf = String::new();
 
         unsafe {
@@ -112,7 +126,7 @@ impl Jq {
             // it is no longer needed.
             drop(initial_value);
 
-            dump(self, &mut buf, use_raw_output)?;
+            dump(self, &mut buf, options)?;
         }
 
         Ok(buf)
@@ -129,11 +143,23 @@ struct JV {
     ptr: jv,
 }
 
+fn jv_print_indent_flags(n: u32) -> u32 {
+    if n > 7 {
+        return jv_print_flags_JV_PRINT_TAB | jv_print_flags_JV_PRINT_PRETTY;
+    }
+
+    if n == 0 {
+        return 0;
+    }
+
+    n << 8 | jv_print_flags_JV_PRINT_PRETTY
+}
+
 impl JV {
     /// Convert the current `JV` into the "dump string" rendering of itself.
-    pub fn as_dump_string(&self) -> Result<String> {
+    pub fn as_dump_string(&self, flags: u32) -> Result<String> {
         let dump = JV {
-            ptr: unsafe { jv_dump_string(jv_copy(self.ptr), 0) },
+            ptr: unsafe { jv_dump_string(jv_copy(self.ptr), flags as i32) },
         };
         dump.as_string()
     }
@@ -272,18 +298,46 @@ unsafe fn get_string_value(value: *const c_char) -> Result<String> {
 }
 
 /// Renders the data from the parser and pushes it into the buffer.
-unsafe fn dump(jq: &Jq, buf: &mut String, use_raw_output: bool) -> Result<()> {
+unsafe fn dump(jq: &Jq, buf: &mut String, options: JqOptions) -> Result<()> {
     // Looks a lot like an iterator...
 
     let mut value = JV {
         ptr: jq_next(jq.state),
     };
 
+    let mut dumpoptions = jv_print_indent_flags(2);
+    match options.indentation {
+        JqIndentation::Compact => {
+            dumpoptions &= !(jv_print_flags_JV_PRINT_TAB | jv_print_indent_flags(7));
+        }
+        JqIndentation::Tabs => {
+            dumpoptions &= !jv_print_indent_flags(7);
+            dumpoptions |= jv_print_flags_JV_PRINT_TAB | jv_print_flags_JV_PRINT_PRETTY;
+        }
+        JqIndentation::Spaces(indent) => {
+            dumpoptions &= !(jv_print_flags_JV_PRINT_TAB | jv_print_indent_flags(7));
+            dumpoptions |= jv_print_indent_flags(indent as u32);
+        }
+    };
+
+    match options.colorization {
+        JqColorization::Custom(colors) => {
+            jq.set_colors(colors)?;
+            dumpoptions |= jv_print_flags_JV_PRINT_COLOR;
+        }
+        JqColorization::Colorize => {
+            dumpoptions |= jv_print_flags_JV_PRINT_COLOR;
+        }
+        JqColorization::Monochrome => {
+            dumpoptions &= !jv_print_flags_JV_PRINT_COLOR;
+        }
+    }
+
     while value.is_valid() {
-        let s: String = if use_raw_output && value.is_string() {
+        let s: String = if options.raw_output && value.is_string() {
             value.as_raw_string()?
         } else {
-            value.as_dump_string()?
+            value.as_dump_string(dumpoptions)?
         };
         buf.push_str(&s);
         buf.push('\n');
