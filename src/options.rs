@@ -1,9 +1,14 @@
 /// Struct containing options that can be passed to jq to customize input/output
 pub struct JqOptions<'a> {
+    /// Output raw strings instead of quoted and escaped 
     pub raw_output: bool,
+    /// Interpret each input as string instead of json
     pub raw_input: bool,
+    /// Order the keys
     pub sort_keys: bool,
+    /// Use colors for the output
     pub colorization: JqColorization<'a>,
+    /// Apply indentation for the output
     pub indentation: JqIndentation,
 }
 
@@ -12,7 +17,7 @@ impl<'a> Default for JqOptions<'a> {
         JqOptions {
             raw_input: false, // TODO
             raw_output: false,
-            sort_keys: false, // TODO
+            sort_keys: false,
             indentation: JqIndentation::Compact,
             colorization: JqColorization::Monochrome,
         }
@@ -20,6 +25,7 @@ impl<'a> Default for JqOptions<'a> {
 }
 
 impl<'a> JqOptions<'a> {
+    /// Output raw strings instead of quoted and escaped 
     pub fn with_raw_output(&self, raw_output: bool) -> Self {
         JqOptions {
             raw_output,
@@ -30,6 +36,7 @@ impl<'a> JqOptions<'a> {
         }
     }
 
+    /// Interpret each input as string instead of json
     pub fn with_raw_input(&self, raw_input: bool) -> Self {
         JqOptions {
             raw_output: self.raw_output,
@@ -40,6 +47,7 @@ impl<'a> JqOptions<'a> {
         }
     }
 
+    /// Order the keys
     pub fn with_sort_keys(&self, sort_keys: bool) -> Self {
         JqOptions {
             raw_output: self.raw_output,
@@ -50,6 +58,7 @@ impl<'a> JqOptions<'a> {
         }
     }
 
+    /// Use colors for the output
     pub fn with_colorization(&self, colorization: JqColorization<'a>) -> Self {
         JqOptions {
             raw_output: self.raw_output,
@@ -60,6 +69,7 @@ impl<'a> JqOptions<'a> {
         }
     }
 
+    /// Apply indentation for the output
     pub fn with_indentation(&self, indentation: JqIndentation) -> Self {
         JqOptions {
             raw_output: self.raw_output,

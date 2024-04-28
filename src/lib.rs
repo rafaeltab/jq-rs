@@ -155,7 +155,7 @@ mod options;
 use std::ffi::CString;
 
 pub use errors::{Error, Result};
-use options::JqOptions;
+pub use options::JqOptions;
 
 /// Run a jq program on a blob of json data.
 ///
