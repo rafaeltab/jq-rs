@@ -12,10 +12,12 @@ use jq_sys::{
     jv_get_kind, jv_invalid_get_msg, jv_invalid_has_msg, jv_kind_JV_KIND_INVALID,
     jv_kind_JV_KIND_NUMBER, jv_kind_JV_KIND_STRING, jv_number_value, jv_parser, jv_parser_free,
     jv_parser_new, jv_parser_next, jv_parser_set_buf, jv_print_flags_JV_PRINT_COLOR,
-    jv_print_flags_JV_PRINT_PRETTY, jv_print_flags_JV_PRINT_TAB, jv_string_value,
+    jv_print_flags_JV_PRINT_PRETTY, jv_print_flags_JV_PRINT_SORTED, jv_print_flags_JV_PRINT_TAB,
+    jv_string_value,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
+use std::sync::{Mutex, MutexGuard};
 
 pub struct Jq {
     state: *mut jq_state,
@@ -87,24 +89,7 @@ impl Jq {
         }
     }
 
-    pub unsafe fn set_colors(&self, colors: &str) -> Result<()> {
-        let c_colors = CString::new(colors)?;
-        let val = jq_set_colors(c_colors.as_ptr());
-
-        if val == 1 {
-            return Ok(());
-        }
-
-        Err(Error::Unknown)
-    }
-
-    /// Run the jq program against an input.
-    pub fn execute(&mut self, input: CString) -> Result<String> {
-        let mut parser = Parser::new();
-        self.process(parser.parse(input)?, JqOptions::default())
-    }
-
-    /// Run the jq program against an input, while returning raw output.
+    /// Run the jq program against an input, using options.
     pub fn execute_advanced(&mut self, input: CString, options: JqOptions) -> Result<String> {
         let mut parser = Parser::new();
         self.process(parser.parse(input)?, options)
@@ -118,6 +103,9 @@ impl Jq {
         let mut buf = String::new();
 
         unsafe {
+            static LOCK: Mutex<()> = Mutex::new(());
+            let _guard: MutexGuard<()> = LOCK.lock().unwrap();
+
             // `jq_start` seems to be a consuming call.
             // In order to avoid a double-free, when `initial_value` is dropped,
             // we have to use `jv_copy` on the inner `jv`.
@@ -320,17 +308,24 @@ unsafe fn dump(jq: &Jq, buf: &mut String, options: JqOptions) -> Result<()> {
         }
     };
 
+    // Reset colors
+    try_set_colors("")?;
     match options.colorization {
         JqColorization::Custom(colors) => {
-            jq.set_colors(colors)?;
+            try_set_colors(colors)?;
             dumpoptions |= jv_print_flags_JV_PRINT_COLOR;
         }
         JqColorization::Colorize => {
+            // This is the default, but we need to restore it as it might have been overwritten by a previous run.
             dumpoptions |= jv_print_flags_JV_PRINT_COLOR;
         }
         JqColorization::Monochrome => {
             dumpoptions &= !jv_print_flags_JV_PRINT_COLOR;
         }
+    }
+
+    if options.sort_keys {
+        dumpoptions |= jv_print_flags_JV_PRINT_SORTED;
     }
 
     while value.is_valid() {
@@ -374,6 +369,19 @@ unsafe fn dump(jq: &Jq, buf: &mut String, options: JqOptions) -> Result<()> {
     } else {
         Ok(())
     }
+}
+
+unsafe fn try_set_colors(colors: &str) -> Result<()> {
+    let c_colors = CString::new(colors)?;
+    let val = jq_set_colors(c_colors.as_ptr());
+
+    if val != 1 {
+        return Err(Error::System {
+            reason: Some("Error while setting colors".to_string()),
+        });
+    }
+
+    Ok(())
 }
 
 /// Various exit codes jq checks for during the `if (jq_halted(jq))` branch of

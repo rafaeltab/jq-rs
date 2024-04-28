@@ -223,12 +223,11 @@ mod test {
 
     use super::{compile, run, run_advanced, Error};
     use matches::assert_matches;
-    use serde_json;
 
     #[test]
     fn reuse_compiled_program() {
         let query = r#"if . == 0 then "zero" elif . == 1 then "one" else "many" end"#;
-        let mut prog = compile(&query).unwrap();
+        let mut prog = compile(query).unwrap();
         assert_eq!(prog.run("2").unwrap(), "\"many\"\n");
         assert_eq!(prog.run("1").unwrap(), "\"one\"\n");
         assert_eq!(prog.run("0").unwrap(), "\"zero\"\n");
@@ -242,8 +241,8 @@ mod test {
 
         // Basically this test is just to check that the state pointers returned by
         // `jq::init()` are completely independent and don't share any global state.
-        let mut prog1 = compile(&query1).unwrap();
-        let mut prog2 = compile(&query2).unwrap();
+        let mut prog1 = compile(query1).unwrap();
+        let mut prog2 = compile(query2).unwrap();
 
         assert_eq!(prog1.run(input).unwrap(), "\"foo\"\n");
         assert_eq!(prog2.run(input).unwrap(), "123\n");
@@ -331,7 +330,7 @@ mod test {
     }
 
     #[test]
-    fn run_raw_string_nested() {
+    fn raw_output_string_nested() {
         let res = run_advanced(
             r#"{name, test: "\(.)"}"#,
             r#"{"name":"john"}"#,
@@ -343,7 +342,7 @@ mod test {
     }
 
     #[test]
-    fn run_raw_string() {
+    fn raw_output_string() {
         let res = run_advanced(
             r#""\(.)""#,
             r#"{"name":"john"}"#,
@@ -355,7 +354,7 @@ mod test {
     }
 
     #[test]
-    fn run_raw_object_test() {
+    fn raw_output_object() {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
@@ -367,28 +366,40 @@ mod test {
     }
 
     #[test]
-    fn run_color_test() {
+    fn colorize() {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
             JqOptions::default().with_colorization(JqColorization::Colorize),
         );
-        let expected = "\u{1b}[1;39m{\u{1b}[0m\u{1b}[34;1m\"name\"\u{1b}[0m\u{1b}[1;39m:\u{1b}[0m\u{1b}[0;32m\"john\"\u{1b}[0m\u{1b}[1;39m\u{1b}[1;39m}\u{1b}[0m\n";
+        let expected = "\u{1b}[1;39m{\u{1b}[0m\u{1b}[1;34m\"name\"\u{1b}[0m\u{1b}[1;39m:\u{1b}[0m\u{1b}[0;32m\"john\"\u{1b}[0m\u{1b}[1;39m}\u{1b}[0m\n";
         assert_eq!(res.unwrap(), expected);
     }
 
     #[test]
-    fn run_custom_color_test() {
+    fn custom_colorize_twice() {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
             JqOptions::default().with_colorization(JqColorization::Custom("0;34:0;34:0;34:0;34:0;34:0;34:0;34:0;34")),
         );
-        let expected = "\u{1b}[0;34m{\u{1b}[0m\u{1b}[34;1m\"name\"\u{1b}[0m\u{1b}[0;34m:\u{1b}[0m\u{1b}[0;34m\"john\"\u{1b}[0m\u{1b}[0;34m\u{1b}[0;34m}\u{1b}[0m\n";
+        let expected = "\u{1b}[0;34m{\u{1b}[0m\u{1b}[0;34m\"name\"\u{1b}[0m\u{1b}[0;34m:\u{1b}[0m\u{1b}[0;34m\"john\"\u{1b}[0m\u{1b}[0;34m}\u{1b}[0m\n";
         assert_eq!(res.unwrap(), expected);
     }
+
     #[test]
-    fn run_monochrome_test() {
+    fn custom_colorize() {
+        let res = run_advanced(
+            r#"."#,
+            r#"{"name":"john"}"#,
+            JqOptions::default().with_colorization(JqColorization::Custom("0;34:0;34:0;34:0;34:0;34:0;34:0;34:0;34")),
+        );
+        let expected = "\u{1b}[0;34m{\u{1b}[0m\u{1b}[0;34m\"name\"\u{1b}[0m\u{1b}[0;34m:\u{1b}[0m\u{1b}[0;34m\"john\"\u{1b}[0m\u{1b}[0;34m}\u{1b}[0m\n";
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn monochrome() {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
@@ -400,7 +411,7 @@ mod test {
     }
 
     #[test]
-    fn run_indent_4() {
+    fn indent_4_spaces() {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
@@ -414,7 +425,7 @@ mod test {
     }
 
     #[test]
-    fn run_indent_minus1() {
+    fn indent_minus1_spaces() {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
@@ -425,7 +436,7 @@ mod test {
     }
 
     #[test]
-    fn run_indent_tab() {
+    fn indent_tabs() {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
@@ -436,7 +447,18 @@ mod test {
     }
 
     #[test]
-    fn run_test() {
+    fn sort_keys() {
+        let res = run_advanced(
+            r#"."#,
+            r#"{"c":"fourth","b":{"c":"third","a": "second"},"a":"first"}"#,
+            JqOptions::default().with_sort_keys(true),
+        );
+        let expected = "{\"a\":\"first\",\"b\":{\"a\":\"second\",\"c\":\"third\"},\"c\":\"fourth\"}\n";
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn basic() {
         let res = run(r#""\(.)""#, r#"{"name":"john"}"#);
         let expected = r#""{\"name\":\"john\"}"
 "#;

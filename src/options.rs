@@ -2,7 +2,6 @@
 pub struct JqOptions<'a> {
     pub raw_output: bool,
     pub raw_input: bool,
-    pub slurp: bool,
     pub sort_keys: bool,
     pub colorization: JqColorization<'a>,
     pub indentation: JqIndentation,
@@ -13,7 +12,6 @@ impl<'a> Default for JqOptions<'a> {
         JqOptions {
             raw_input: false, // TODO
             raw_output: false,
-            slurp: false, // TODO
             sort_keys: false, // TODO
             indentation: JqIndentation::Compact,
             colorization: JqColorization::Monochrome,
@@ -26,7 +24,6 @@ impl<'a> JqOptions<'a> {
         JqOptions {
             raw_output,
             raw_input: self.raw_input,
-            slurp: self.slurp,
             sort_keys: self.sort_keys,
             colorization: self.colorization,
             indentation: self.indentation,
@@ -37,18 +34,6 @@ impl<'a> JqOptions<'a> {
         JqOptions {
             raw_output: self.raw_output,
             raw_input,
-            slurp: self.slurp,
-            sort_keys: self.sort_keys,
-            colorization: self.colorization,
-            indentation: self.indentation,
-        }
-    }
-
-    pub fn with_slurp(&self, slurp: bool) -> Self {
-        JqOptions {
-            raw_output: self.raw_output,
-            raw_input: self.raw_input,
-            slurp,
             sort_keys: self.sort_keys,
             colorization: self.colorization,
             indentation: self.indentation,
@@ -59,7 +44,6 @@ impl<'a> JqOptions<'a> {
         JqOptions {
             raw_output: self.raw_output,
             raw_input: self.raw_input,
-            slurp: self.slurp,
             sort_keys,
             colorization: self.colorization,
             indentation: self.indentation,
@@ -70,7 +54,6 @@ impl<'a> JqOptions<'a> {
         JqOptions {
             raw_output: self.raw_output,
             raw_input: self.raw_input,
-            slurp: self.slurp,
             sort_keys: self.sort_keys,
             colorization,
             indentation: self.indentation,
@@ -81,7 +64,6 @@ impl<'a> JqOptions<'a> {
         JqOptions {
             raw_output: self.raw_output,
             raw_input: self.raw_input,
-            slurp: self.slurp,
             sort_keys: self.sort_keys,
             colorization: self.colorization,
             indentation,
