@@ -201,7 +201,7 @@ impl JqProgram {
             return Ok("".into());
         }
         let input = CString::new(data)?;
-        self.jq.execute_advanced(input, options)
+        self.jq.execute_advanced(input, &options)
     }
 }
 
@@ -381,7 +381,9 @@ mod test {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
-            JqOptions::default().with_colorization(JqColorization::Custom("0;34:0;34:0;34:0;34:0;34:0;34:0;34:0;34")),
+            JqOptions::default().with_colorization(JqColorization::Custom(
+                "0;34:0;34:0;34:0;34:0;34:0;34:0;34:0;34",
+            )),
         );
         let expected = "\u{1b}[0;34m{\u{1b}[0m\u{1b}[0;34m\"name\"\u{1b}[0m\u{1b}[0;34m:\u{1b}[0m\u{1b}[0;34m\"john\"\u{1b}[0m\u{1b}[0;34m}\u{1b}[0m\n";
         assert_eq!(res.unwrap(), expected);
@@ -392,7 +394,9 @@ mod test {
         let res = run_advanced(
             r#"."#,
             r#"{"name":"john"}"#,
-            JqOptions::default().with_colorization(JqColorization::Custom("0;34:0;34:0;34:0;34:0;34:0;34:0;34:0;34")),
+            JqOptions::default().with_colorization(JqColorization::Custom(
+                "0;34:0;34:0;34:0;34:0;34:0;34:0;34:0;34",
+            )),
         );
         let expected = "\u{1b}[0;34m{\u{1b}[0m\u{1b}[0;34m\"name\"\u{1b}[0m\u{1b}[0;34m:\u{1b}[0m\u{1b}[0;34m\"john\"\u{1b}[0m\u{1b}[0;34m}\u{1b}[0m\n";
         assert_eq!(res.unwrap(), expected);
@@ -453,7 +457,20 @@ mod test {
             r#"{"c":"fourth","b":{"c":"third","a": "second"},"a":"first"}"#,
             JqOptions::default().with_sort_keys(true),
         );
-        let expected = "{\"a\":\"first\",\"b\":{\"a\":\"second\",\"c\":\"third\"},\"c\":\"fourth\"}\n";
+        let expected =
+            "{\"a\":\"first\",\"b\":{\"a\":\"second\",\"c\":\"third\"},\"c\":\"fourth\"}\n";
+        assert_eq!(res.unwrap(), expected);
+    }
+
+    #[test]
+    fn raw_input() {
+        let res = run_advanced(
+            r#"."#,
+            r#"{"name":"john"}"#,
+            JqOptions::default().with_raw_input(true),
+        );
+        let expected = r#""{\"name\":\"john\"}"
+"#;
         assert_eq!(res.unwrap(), expected);
     }
 

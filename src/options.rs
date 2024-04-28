@@ -15,7 +15,7 @@ pub struct JqOptions<'a> {
 impl<'a> Default for JqOptions<'a> {
     fn default() -> Self {
         JqOptions {
-            raw_input: false, // TODO
+            raw_input: false,
             raw_output: false,
             sort_keys: false,
             indentation: JqIndentation::Compact,

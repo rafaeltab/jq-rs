@@ -13,7 +13,7 @@ use jq_sys::{
     jv_kind_JV_KIND_NUMBER, jv_kind_JV_KIND_STRING, jv_number_value, jv_parser, jv_parser_free,
     jv_parser_new, jv_parser_next, jv_parser_set_buf, jv_print_flags_JV_PRINT_COLOR,
     jv_print_flags_JV_PRINT_PRETTY, jv_print_flags_JV_PRINT_SORTED, jv_print_flags_JV_PRINT_TAB,
-    jv_string_value,
+    jv_string, jv_string_value,
 };
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_void};
@@ -90,16 +90,16 @@ impl Jq {
     }
 
     /// Run the jq program against an input, using options.
-    pub fn execute_advanced(&mut self, input: CString, options: JqOptions) -> Result<String> {
+    pub fn execute_advanced(&mut self, input: CString, options: &JqOptions) -> Result<String> {
         let mut parser = Parser::new();
-        self.process(parser.parse(input)?, options)
+        self.process(parser.parse(input, options)?, options)
     }
 
     /// Unwind the parser and return the rendered result.
     ///
     /// When this results in `Err`, the String value should contain a message about
     /// what failed.
-    fn process(&mut self, initial_value: JV, options: JqOptions) -> Result<String> {
+    fn process(&mut self, initial_value: JV, options: &JqOptions) -> Result<String> {
         let mut buf = String::new();
 
         unsafe {
@@ -233,7 +233,7 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self, input: CString) -> Result<JV> {
+    pub fn parse(&mut self, input: CString, options: &JqOptions) -> Result<JV> {
         // For a single run, we could set this to `1` (aka `true`) but this will
         // break the repeated `JqProgram` usage.
         // It may be worth exposing this to the caller so they can set it for each
@@ -255,7 +255,11 @@ impl Parser {
         };
 
         let value = JV {
-            ptr: unsafe { jv_parser_next(self.ptr) },
+            ptr: if !options.raw_input {
+                unsafe { jv_parser_next(self.ptr) }
+            } else {
+                unsafe { jv_string(input.as_ptr()) }
+            },
         };
         if value.is_valid() {
             Ok(value)
@@ -286,7 +290,7 @@ unsafe fn get_string_value(value: *const c_char) -> Result<String> {
 }
 
 /// Renders the data from the parser and pushes it into the buffer.
-unsafe fn dump(jq: &Jq, buf: &mut String, options: JqOptions) -> Result<()> {
+unsafe fn dump(jq: &Jq, buf: &mut String, options: &JqOptions) -> Result<()> {
     // Looks a lot like an iterator...
 
     let mut value = JV {
