@@ -116,12 +116,90 @@ let parsed: Vec<i64> = serde_json::from_str(&output).unwrap();
 
 assert_eq!(vec![2009, 2012, 2014, 2016, 2019], parsed);
 ```
+## Options
 
-Barely any of the options or flags available from the [jq] cli are exposed
-currently.
-Literally all that is provided is the ability to execute a _jq program_ on a blob
-of json.
-Please pardon my dust as I sort out the details.
+Jq has flags to alter the way in which data is input or output, some of these flags are supported.
+The supported flags are available throught the _advanced varients of the run functions.
+
+```rust
+use jq_rs;
+use serde_json::{self, json};
+
+let data = json!({ "title": "Coraline", "year": 2009 });
+let query = ".title";
+
+// program output as a raw string, without quotes
+let output = jq_rs::run_advanced(query, &data.to_string(), jq_rs::JqOptions::default().with_raw_output(true));
+
+let output_raw = jq_rs::run_advanced(query, &data.to_string());
+
+assert_eq!("\"Coraline\"", output);
+```
+
+### Raw input and raw output
+
+jq-rs supports the `-R, --raw-input` and `-r, --raw-output` flags through the following options:
+
+```rust
+use jq_rs;
+let options = jq_rs::JqOptions::default()
+    .with_raw_output(true)
+    .with_raw_input(true);
+```
+
+These are disabled by default.
+
+### Compact output
+
+jq-rs supports the `-c, --compact-output`, `--tabs` and `--indent n` flags through the following options:
+
+```rust
+use jq_rs;
+let compact = jq_rs::JqOptions::default()
+    .with_indentation(jq_rs::JqIndentation::Compact);
+
+let tabs = jq_rs::JqOptions::default()
+    .with_indentation(jq_rs::JqIndentation::Tabs);
+
+let spaces_2 = jq_rs::JqOptions::default()
+    .with_indentation(jq_rs::JqIndentation::Spaces(2));
+```
+
+Compact is the default for this option.
+
+### Sorting
+
+jq-rs supports the `-S, --sort-keys` flag using the following option:
+
+```rust
+use jq_rs;
+let sorted = jq_rs::JqOptions::default()
+    .with_sort_keys(true);
+```
+
+Sorting is disabled by default.
+
+### Colorization
+
+jq-rs supports the `-C, --color-output` and `-M, --monochrome-output` flags.
+jq-rs also supports custom colors, which are normally available through the `JQ_COLORS` environment variable.
+
+```rust
+use jq_rs;
+
+let monochrome = jq_rs::JqOptions::default()
+    .with_colorization(jq_rs::JqColorization::Monochrome);
+
+let colorize = jq_rs::JqOptions::default()
+    .with_colorization(jq_rs::JqColorization::Colorize),
+
+let all_blue = jq_rs::JqOptions::default()
+    .with_colorization(jq_rs::JqColorization::Custom(
+        "0;34:0;34:0;34:0;34:0;34:0;34:0;34:0;34",
+    ));
+```
+
+The default option is monochrome, refer to the [jq documentation](https://jqlang.github.io/jq/manual/#colors) for using custom colors.
 
 ## Linking to libjq
 
